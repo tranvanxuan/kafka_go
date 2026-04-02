@@ -12,6 +12,7 @@
 ## Table of contents
 
 -   [Table of contents](#table-of-contents)
+-   [Architecture](#architecture)
 -   [Description](#description)
 -   [Core Concepts](#core-concepts)
     -   [Network Programming](#network-programming)
@@ -47,6 +48,21 @@ Born from a fascination with Distributed Systems, Gokafka was created to demysti
 **Concurrency:** To leverage the full power of Goroutines and Channels for handling thousands of concurrent connections.
 
 **Distributed Logic:** To manually design distributed mechanisms, from Broker management to Partition logic.
+
+<!-- Architecture -->
+<a name="architecture"></a>
+
+## Architecture
+
+<img src="docs/architeture.png" alt="Architecture" />
+
+-   **Producer**: the entity that sends messages to the queue
+-   **Consumer**: the entity that receives and processes messages from the queue
+-   **Message**: the data unit sent between the producer and consumer
+-   **Topic**: categories used to organize messages. Messages are sent to and read from specific topics. In other words, producers write data to topics, and consumers read data from topics.
+-   **Subscription**: a configuration defining which consumers receive messages from a specific topic.
+- **Consumer Group**: a group of consumers sharing a common subscription to a topic.
+- **Commit**: acknowledgment of a message by a consumer. Signal for dequeue.
 
 <!-- Core Concepts -->
 <a name="core-concepts"></a>
