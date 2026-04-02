@@ -12,8 +12,8 @@
 ## Table of contents
 
 -   [Table of contents](#table-of-contents)
--   [Architecture](#architecture)
 -   [Description](#description)
+-   [Architecture](#architecture)
 -   [Core Concepts](#core-concepts)
     -   [Network Programming](#network-programming)
     -   [TCP protocol](#tcp-protocol)
@@ -159,5 +159,7 @@ Born from a fascination with Distributed Systems, Gokafka was created to demysti
 ## Acknowledgments
 * [Why is TCP Called a Connection Oriented Protocol?](https://www.geeksforgeeks.org/computer-networks/why-is-tcp-called-a-connection-oriented-protocol/)
 * [Buffered vs Unbuffered I/O on Unix](https://viniciusrocha.com/posts/buffered-vs-unbuffered-i/o-on-unix/)
+* [Producer delivery](https://docs.confluent.io/kafka/design/delivery-semantics.html#producer-delivery)
+* [Consumer position illustrated](https://docs.confluent.io/kafka/design/consumer-design.html#consumer-position-illustrated)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
