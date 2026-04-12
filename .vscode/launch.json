@@ -5,13 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Client",
+            "name": "Launch Producer",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}",
+            "program": "${workspaceFolder}",
             "args": [
-                "client"
+                "producer",
+                "11000"
             ],
             "console": "integratedTerminal"
         },
@@ -20,11 +21,11 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}",
+            "program": "${workspaceFolder}",
             "args": [
                 "server"
             ],
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
         }
     ]
 }

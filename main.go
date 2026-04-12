@@ -6,42 +6,30 @@ import (
 	"io"
 	"net"
 	"os"
-	"strings"
+	"strconv"
 )
 
 func main() {
 	// startServer()
 	fmt.Println(os.Args)
-	if os.Args[1] == "server" {
+	switch os.Args[1] {
+	case "server":
 		var broker = Broker{}
 		err := broker.startBrokerServer()
 		if err != nil {
 			fmt.Printf("Error starting broker: %v\n", err.Error())
 		}
-	} else {
+	case "producer":
+		fmt.Println("Trying to start producer processes")
+		port, err := strconv.ParseInt(os.Args[2], 10, 32)
+		if err != nil {
+			panic(err)
+		}
+		producer := Producer{}
+		producer.startProducerServer(int16(port))
+	default:
 		clientConnectTCPAndEcho(10000)
 	}
-}
-
-func writeEchoToStream(streamRw *bufio.ReadWriter, data string) error {
-	var err error
-	err = streamRw.WriteByte(byte(len(data) + 1))
-	if err != nil {
-		return err
-	}
-	err = streamRw.WriteByte(ECHO)
-	if err != nil {
-		return err
-	}
-	_, err = streamRw.WriteString(data)
-	if err != nil {
-		return err
-	}
-	err = streamRw.Flush()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func clientConnectTCPAndEcho(port int) {
@@ -58,15 +46,16 @@ func clientConnectTCPAndEcho(port int) {
 			// Probably panic here
 		}
 	}
-	fmt.Printf("Sent to server: %s\n", line)
-	writeEchoToStream(streamRw, strings.Trim(line, "\n"))
+	message := Message{ECHO: &line}
+	err = writeMessageToStream(streamRw, message)
+	if err != nil {
+		panic(err)
+	}
 
 	// Try to read back from the stream
-	header, err := streamRw.ReadByte()
-	if header == 0 || err != nil {
-		return
+	resp, err := readMessageFromStream(streamRw)
+	if err != nil {
+		panic(err)
 	}
-	data, _ := streamRw.Peek(int(header)) // Read exactly n bytes
-	fmt.Printf("Receive message from server: %s\n", data)
-	streamRw.Discard(int(header)) // Throw n bytes away
+	fmt.Printf("Receive message from server: %s\n", *resp.rECHO)
 }
