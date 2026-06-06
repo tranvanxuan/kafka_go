@@ -9,17 +9,23 @@ import (
 )
 
 type Producer struct {
+	port    uint16
+	topicID uint16
 }
 
 // Connect to Broker to send register
-func (b *Producer) sendPortDataToBroker(port int16) error {
+func (p *Producer) sendPortDataToBroker() error {
 	var err error
 	conn, _ := net.Dial("tcp", fmt.Sprintf(":%d", BrokerPort))
 	streamRw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 
-	portStr := fmt.Sprintf("%d", port)
+	pRegMsg := ProducerRegisterMessage{
+		port:    p.port,
+		topicID: p.topicID,
+	}
+	fmt.Printf("pRegMsg: port=%d, topicID=%d\n", pRegMsg.port, pRegMsg.topicID)
 	message := Message{
-		PREG: &portStr,
+		PREG: &pRegMsg,
 	}
 	err = writeMessageToStream(streamRw, message)
 	if err != nil {
@@ -36,10 +42,10 @@ func (b *Producer) sendPortDataToBroker(port int16) error {
 	return nil
 }
 
-func (b *Producer) startProducerServer(port int16) error {
+func (p *Producer) startProducerServer(port int16) error {
 	var err error
 
-	err = b.sendPortDataToBroker(port)
+	err = p.sendPortDataToBroker()
 	if err != nil {
 		panic(err)
 	}
@@ -65,8 +71,8 @@ func (b *Producer) startProducerServer(port int16) error {
 			}
 		}
 
-		// write ECHO
-		message := Message{ECHO: &line}
+		// write ProducerConsumeMessage
+		message := Message{ProducerConsumeMessage: []byte(line)}
 		err = writeMessageToStream(streamRw, message)
 		if err != nil {
 			break
@@ -78,7 +84,7 @@ func (b *Producer) startProducerServer(port int16) error {
 			break
 		}
 
-		fmt.Printf("Receive message from broker: %s\n", *resp.rECHO)
+		fmt.Printf("Receive ProducerConsumeMessage from broker: %d\n", *resp.rProducerConsumeMessage)
 	}
 	err = conn.Close()
 	if err != nil {

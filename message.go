@@ -6,20 +6,51 @@ import (
 )
 
 const (
-	ECHO = 1
-	PREG = 2
+	ECHO                   = 1
+	PREG                   = 2
+	ProducerConsumeMessage = 3
 	// Response
-	rECHO = 101
-	rPREG = 102
+	rECHO                   = 101
+	rPREG                   = 102
+	rProducerConsumeMessage = 103
 )
 
 type Message struct {
 	ECHO *string
 	// producer register
-	PREG *string
+	PREG                   *ProducerRegisterMessage
+	ProducerConsumeMessage []byte // nil able
 	// Response
-	rECHO *string
-	rPREG *byte
+	rECHO                   *string
+	rPREG                   *byte
+	rProducerConsumeMessage *byte
+}
+
+type ProducerRegisterMessage struct {
+	port    uint16
+	topicID uint16
+}
+
+func (m *ProducerRegisterMessage) fromByte(streamMessage []byte) {
+	// first 2 bytes: port
+	// next 2 byte: topicID
+	// 10000 -> 0 255
+	// data[4, 76, ...]
+	m.port = uint16(streamMessage[0])<<8 + uint16(streamMessage[1]) // uint16(4) << 8 + uint(76) = 1024 + 76 = 1100
+	m.topicID = uint16(streamMessage[2])<<8 + uint16(streamMessage[3])
+}
+
+func (m *ProducerRegisterMessage) toByte() []byte {
+	var data [4]byte
+	// first 2 bytes: port
+	// next 2 byte: topicID
+	// example for 1100
+	data[0] = byte(m.port >> 8)  // byte(1100 >> 8) = 4
+	data[1] = byte(m.port % 255) // byte(1100) = 76
+	data[2] = byte(m.topicID >> 8)
+	data[3] = byte(m.topicID % 255)
+	// data[4, 76, ...]
+	return data[:]
 }
 
 // Message format:
@@ -59,11 +90,17 @@ func parseMessage(streamMessage []byte) *Message {
 		var st = string(streamMessage[1:])
 		return &Message{rECHO: &st}
 	case PREG:
-		var st = string(streamMessage[1:])
-		return &Message{PREG: &st}
+		p := ProducerRegisterMessage{}
+		p.fromByte(streamMessage[1:])
+		return &Message{PREG: &p}
 	case rPREG:
 		var st = streamMessage[1]
 		return &Message{rPREG: &st}
+	case ProducerConsumeMessage:
+		return &Message{ProducerConsumeMessage: streamMessage[1:]}
+	case rProducerConsumeMessage:
+		var st = streamMessage[1]
+		return &Message{rProducerConsumeMessage: &st}
 	default:
 		return nil
 	}
@@ -115,13 +152,25 @@ func writeMessageToStream(streamRw *bufio.ReadWriter, message Message) error {
 		}
 	}
 	if message.PREG != nil {
-		if err := writeDataTOStreamWithType(streamRw, PREG, *message.PREG); err != nil {
+		data := string(message.PREG.toByte())
+		if err := writeDataTOStreamWithType(streamRw, PREG, data); err != nil {
 			return err
 		}
 	}
 	if message.rPREG != nil {
 		data := fmt.Sprintf("%d", *message.rPREG)
 		if err := writeDataTOStreamWithType(streamRw, rPREG, data); err != nil {
+			return err
+		}
+	}
+	if message.ProducerConsumeMessage != nil {
+		if err := writeDataTOStreamWithType(streamRw, ProducerConsumeMessage, string(message.ProducerConsumeMessage)); err != nil {
+			return err
+		}
+	}
+	if message.rProducerConsumeMessage != nil {
+		data := fmt.Sprintf("%d", *message.rProducerConsumeMessage)
+		if err := writeDataTOStreamWithType(streamRw, rProducerConsumeMessage, data); err != nil {
 			return err
 		}
 	}

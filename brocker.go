@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"strconv"
 )
 
 const BrokerPort = 10000
 
 type Broker struct {
+	topics []Topic
+}
+
+func (b *Broker) init() {
+	b.topics = make([]Topic, 0)
 }
 
 func (b *Broker) startBrokerServer() error {
@@ -73,14 +77,27 @@ func (b *Broker) processEchoMessage(echoMessage *string) (string, error) {
 	return fmt.Sprintf("I have receiver: %s", *echoMessage), nil
 }
 
-func (b *Broker) processProducerRegisterMessage(pREGMessage *string) (*byte, error) {
-	port, err := strconv.ParseInt(*pREGMessage, 10, 32)
-	if err != nil {
-		return nil, err
+func (b *Broker) processProducerRegisterMessage(pREGMessage *ProducerRegisterMessage) (*byte, error) {
+	fmt.Printf("p = %v\n", pREGMessage)
+	topicID := -1
+
+	for idx, tp := range b.topics {
+		if tp.topicID == pREGMessage.topicID {
+			topicID = idx
+			break
+		}
 	}
+
+	if topicID == -1 {
+		tp := Topic{}
+		tp.init(pREGMessage.topicID)
+		b.topics = append(b.topics, tp)
+		topicID = len(b.topics) - 1
+	}
+
 	go func() {
-		conn, _ := net.Dial("tcp", fmt.Sprintf(":%d", port))
-		fmt.Printf("Connected to server at port %v\n", port)
+		conn, _ := net.Dial("tcp", fmt.Sprintf(":%d", pREGMessage.port))
+		fmt.Printf("Connected to server at port %v\n", pREGMessage.port)
 		// Read input from stdin and write to stream.
 		streamRw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 		for {
@@ -89,17 +106,24 @@ func (b *Broker) processProducerRegisterMessage(pREGMessage *string) (*byte, err
 			if parsedMessage == nil || err != nil {
 				panic(err)
 			}
-			// Process something here
-			resp, err := b.processBrokerMessage(parsedMessage)
-			if err != nil {
-				panic(err)
-			}
-			err = writeMessageToStream(streamRw, *resp)
-			if err != nil {
-				panic(err)
+			if parsedMessage.ProducerConsumeMessage != nil {
+				resp, err := b.ProcessProducerConsumeMessage(parsedMessage.ProducerConsumeMessage, topicID)
+				if err != nil {
+					panic(err)
+				}
+				err = writeMessageToStream(streamRw, Message{rProducerConsumeMessage: &resp})
+				if err != nil {
+					panic(err)
+				}
 			}
 		}
 	}()
 	var resp byte = 0
-	return &resp, err
+	return &resp, nil
+}
+
+func (b *Broker) ProcessProducerConsumeMessage(pcm []byte, topicID int) (byte, error) {
+	b.topics[topicID].mq.push(pcm)
+	b.topics[topicID].mq.debug()
+	return 0, nil
 }
