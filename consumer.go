@@ -74,7 +74,8 @@ func (c *Consumer) startConsumerServer() error {
 			break
 		}
 		fmt.Printf("Receive ProducerConsumeMessage from broker: %s\n", message.ProducerConsumeMessage)
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
+		// TODO: Do something with the message
 	}
 	err = conn.Close()
 	if err != nil {

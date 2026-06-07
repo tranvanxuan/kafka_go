@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"time"
 )
 
 const BrokerPort = 10000
@@ -81,10 +80,6 @@ func (b *Broker) processBrokerMessage(message *Message) (*Message, error) {
 	return nil, nil
 }
 
-func (b *Broker) processEchoMessage(echoMessage *string) (string, error) {
-	return fmt.Sprintf("I have receiver: %s", *echoMessage), nil
-}
-
 func (b *Broker) processProducerRegisterMessage(pRegMessage ProducerRegisterMessage) (*byte, error) {
 	fmt.Printf("Broker received pRegMessage: port=%d, topicID=%d\n", pRegMessage.port, pRegMessage.topicID)
 	var topic *Topic
@@ -101,7 +96,6 @@ func (b *Broker) processProducerRegisterMessage(pRegMessage ProducerRegisterMess
 		tp.init(pRegMessage.topicID)
 		b.topics = append(b.topics, tp)
 		topic = tp
-		go b.stopAndPop(topic)
 	}
 
 	go func() {
@@ -132,46 +126,50 @@ func (b *Broker) processProducerRegisterMessage(pRegMessage ProducerRegisterMess
 	return &resp, nil
 }
 
+func (b *Broker) processEchoMessage(echoMessage *string) (string, error) {
+	return fmt.Sprintf("I have receiver: %s", *echoMessage), nil
+}
+
 func (b *Broker) ProcessProducerConsumeMessage(pcm []byte, topic *Topic) (byte, error) {
-	topic.mq.push(pcm)
-	topic.mq.debug()
+	// If there are no cgroups yet, store in topic's mq
+	if len(topic.cgroups) == 0 {
+		topic.mq.push(pcm)
+		topic.mq.debug()
+		return 0, nil
+	}
+
+	for _, cg := range topic.cgroups {
+		minSize := 100000
+		var targetPartitionIdx int = -1
+		for idx, partition := range cg.partitions {
+			currentSize := partition.queue.size()
+			if currentSize < minSize {
+				minSize = currentSize
+				targetPartitionIdx = idx
+			}
+		}
+		if targetPartitionIdx != -1 {
+			targetPartition := cg.partitions[targetPartitionIdx]
+			targetPartition.lock.Lock()
+
+			// First, dump all messages from topic's mq to this partition
+			for {
+				msgFromMQ := topic.mq.pop()
+				if msgFromMQ == nil {
+					break
+				}
+				targetPartition.queue.push(msgFromMQ)
+			}
+
+			targetPartition.queue.push(pcm)
+			fmt.Printf("Put data '%s' to cgroup %d, partition %d\n", string(pcm), cg.groupID, targetPartitionIdx)
+			targetPartition.lock.Unlock()
+		}
+	}
+
 	return 0, nil
 }
 
-func (b *Broker) stopAndPop(t *Topic) {
-	for {
-		time.Sleep(5 * time.Second)
-		t.lock.Lock()
-		minOffset := -1
-		for _, cg := range t.cgroups {
-			if minOffset == -1 {
-				minOffset = int(cg.offset)
-			} else {
-				if cg.offset < uint(minOffset) {
-					minOffset = int(cg.offset)
-				}
-			}
-		}
-		fmt.Printf("Stop and pop run, minOffset = %d\n", minOffset)
-		if minOffset != -1 {
-			for _, cg := range t.cgroups {
-				cg.lock.Lock()
-				cg.offset -= uint(minOffset)
-			}
-			for {
-				if minOffset == 0 {
-					break
-				}
-				t.mq.pop()
-				minOffset -= 1
-			}
-			for _, cg := range t.cgroups {
-				cg.lock.Unlock()
-			}
-		}
-		t.lock.Unlock()
-	}
-}
 func (b *Broker) processConsumerRegisterMessage(cRegMessage *ConsumerRegisterMessage) (*byte, error) {
 	fmt.Printf("Broker received cRegMessage: port=%d, topicID=%d, groupID=%d\n", cRegMessage.port, cRegMessage.topicID, cRegMessage.groupID)
 	var topic *Topic
@@ -197,117 +195,75 @@ func (b *Broker) processConsumerRegisterMessage(cRegMessage *ConsumerRegisterMes
 	if cgroup == nil {
 		cg := &CGroup{
 			groupID: cRegMessage.groupID,
-			offset:  0,
 		}
 		topic.lock.Lock()
 		topic.cgroups = append(topic.cgroups, cg)
 		topic.lock.Unlock()
 		cgroup = cg
-		// go b.startConsumerGroupConsumption(topic, cgroup)
+		// Initialize first partition
+		partition := &Partition{}
+		partition.init()
+		cgroup.lock.Lock()
+		cgroup.partitions = append(cgroup.partitions, partition)
+		cgroup.lock.Unlock()
 	}
 	conn, _ := net.Dial("tcp", fmt.Sprintf(":%d", cRegMessage.port))
 	fmt.Printf("Connected to consumer at port %v\n", cRegMessage.port)
-	consumer := ConsumerConn{
+	consumer := &ConsumerConn{
 		status: true,
 		conn:   conn,
 	}
 	cgroup.lock.Lock()
 	cgroup.consumers = append(cgroup.consumers, consumer)
-	fmt.Printf("Pushed to the list of consumer, port %v\n", cRegMessage.port)
+	if len(cgroup.partitions) < len(cgroup.consumers) {
+		partition := &Partition{}
+		partition.init()
+		cgroup.partitions = append(cgroup.partitions, partition)
+	}
+	fmt.Printf("Pushed to the list of consumer, port %v, partition %d\n", cRegMessage.port, len(cgroup.partitions)-1)
+	partitionIdx := len(cgroup.partitions) - 1
 	cgroup.lock.Unlock()
-	// go b.readConsumerReady(cgroup, &consumer)
-	go b.readConsumerReadyAndSend(topic, cgroup, &consumer)
+	go b.readConsumerReadyAndSend(cgroup, consumer, partitionIdx)
 	var resp byte = 0
 	return &resp, nil
 }
 
-func (b *Broker) startConsumerGroupConsumption(topic *Topic, cgroup *CGroup) {
-	var err error
-	fmt.Printf("Starting consumer group process, topicID = %d, groupID = %d\n", topic.topicID, cgroup.groupID)
-	for {
-		cgroup.lock.Lock()
-		offset := cgroup.offset
-		// Take message from topic for consumption
-		pcm := topic.mq.peek(offset)
-		// fmt.Printf("offset = %d, pcm = %v\n", offset, pcm)
-		// time.Sleep(5 * time.Second)
-		if pcm == nil {
-			cgroup.lock.Unlock()
-			continue
-		}
-
-		for i := range cgroup.consumers {
-			consumer := &cgroup.consumers[i]
-			if consumer.status {
-				// Read input from stdin and write to stream.
-				streamRW := bufio.NewReadWriter(bufio.NewReader(consumer.conn), bufio.NewWriter(consumer.conn))
-
-				// Write PCM message to ready consumer
-				consumer.status = false
-				err = writeMessageToStream(streamRW, Message{
-					ProducerConsumeMessage: pcm,
-				})
-				if err != nil {
-					panic(err)
-				}
-
-				// Read ack
-				parsedMessage, err := readMessageFromStream(streamRW) // Wait forever!!
-				if parsedMessage == nil || err != nil {
-					panic(err)
-				}
-				if parsedMessage.rProducerConsumeMessage != nil {
-					consumer.status = true
-				}
-
-				// Increase offset on consumed
-				cgroup.offset += 1
-			} else {
-				fmt.Printf("No consumer is ready, size = %d\n", len(cgroup.consumers))
-			}
-		}
-		cgroup.lock.Unlock()
-	}
-}
-
-func (b *Broker) readConsumerReadyAndSend(topic *Topic, cgroup *CGroup, consumerConn *ConsumerConn) {
+func (b *Broker) readConsumerReadyAndSend(cgroup *CGroup, consumerConn *ConsumerConn, partitionIdx int) {
 	streamRW := bufio.NewReadWriter(bufio.NewReader(consumerConn.conn), bufio.NewWriter(consumerConn.conn))
 
 	for {
 		// Read ack
-		parsedMessage, err := readMessageFromStream(streamRW) // Wait forever!!
-		if parsedMessage == nil || err != nil {
-			panic(err)
-		}
-		if parsedMessage.rProducerConsumeMessage != nil {
-			consumerConn.status = true
-		} else {
-			fmt.Printf("Parsed message not R_PCM: %v", parsedMessage)
-			panic("Why not rProducerConsumeMessage???")
+		if !consumerConn.status {
+			parsedMessage, err := readMessageFromStream(streamRW) // Wait forever!!
+			if parsedMessage == nil || err != nil {
+				panic(err)
+			}
+			if parsedMessage.rProducerConsumeMessage != nil {
+				consumerConn.status = true
+			} else {
+				fmt.Printf("Parsed message not rProducerConsumeMessage: %v", parsedMessage)
+				panic("Why not rProducerConsumeMessage???")
+			}
 		}
 
-		cgroup.lock.Lock()
-		offset := cgroup.offset
-		// Take message from topic for consumption
-		pcm := topic.mq.peek(offset)
-		// fmt.Printf("offset = %d, pcm = %v\n", offset, pcm)
-		// time.Sleep(5 * time.Second)
+		// Take message from the assigned partition
+		partition := cgroup.partitions[partitionIdx]
+
+		partition.lock.Lock()
+		pcm := partition.queue.pop()
+		partition.lock.Unlock()
+
 		if pcm == nil {
-			cgroup.lock.Unlock()
 			continue
 		}
 
 		// Write PCM message to ready consumer
 		consumerConn.status = false
-		err = writeMessageToStream(streamRW, Message{
+		err := writeMessageToStream(streamRW, Message{
 			ProducerConsumeMessage: pcm,
 		})
 		if err != nil {
 			panic(err)
 		}
-
-		// Increase offset on consumed
-		cgroup.offset += 1
-		cgroup.lock.Unlock()
 	}
 }
