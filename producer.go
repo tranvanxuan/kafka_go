@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 )
 
 type Producer struct {
@@ -83,6 +84,45 @@ func (p *Producer) startProducerServer() error {
 		}
 
 		fmt.Printf("Receive ProducerConsumeMessage from broker: %d\n", *resp.rProducerConsumeMessage)
+	}
+	err = conn.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Producer) startAndSimulateProducerServer() error {
+	var err error
+
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.port))
+	if err != nil {
+		panic(err)
+	}
+	err = p.sendPortDataToBroker()
+	if err != nil {
+		panic(err)
+	}
+	conn, _ := ln.Accept() // Block until can
+	streamRW := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+
+	for {
+		time.Sleep(1 * time.Second)
+		line := fmt.Sprintf("Hello from producer %v at %v", p.port, time.Now())
+		// write ProducerConsumeMessage
+		err = writeMessageToStream(streamRW, Message{
+			ProducerConsumeMessage: []byte(line),
+		})
+		if err != nil {
+			break
+		}
+		// Try to read back from the stream
+		resp, err := readMessageFromStream(streamRW)
+		if err != nil {
+			break
+		}
+
+		fmt.Printf("Receive rProducerConsumeMessage from broker: %d\n", *resp.rProducerConsumeMessage)
 	}
 	err = conn.Close()
 	if err != nil {
