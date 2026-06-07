@@ -21,12 +21,39 @@ func main() {
 		}
 	case "producer":
 		fmt.Println("Trying to start producer processes")
-		port, err := strconv.ParseInt(os.Args[2], 10, 32)
+		port, err := strconv.ParseInt(os.Args[2], 10, 16)
 		if err != nil {
 			panic(err)
 		}
-		producer := Producer{}
-		producer.startProducerServer(int16(port))
+		topicID, err := strconv.ParseInt(os.Args[3], 10, 16)
+		if err != nil {
+			panic(err)
+		}
+		producer := Producer{
+			port:    uint16(port),
+			topicID: uint16(topicID),
+		}
+		producer.startProducerServer()
+	case "consumer":
+		fmt.Println("Trying to start consumer processes")
+		port, err := strconv.ParseInt(os.Args[2], 10, 16)
+		if err != nil {
+			panic(err)
+		}
+		topicID, err := strconv.ParseInt(os.Args[3], 10, 16)
+		if err != nil {
+			panic(err)
+		}
+		groupID, err := strconv.ParseInt(os.Args[4], 10, 16)
+		if err != nil {
+			panic(err)
+		}
+		consumer := Consumer{
+			port:    uint16(port),
+			topicID: uint16(topicID),
+			groupID: uint16(groupID),
+		}
+		consumer.startConsumerServer()
 	default:
 		clientConnectTCPAndEcho(10000)
 	}
@@ -42,8 +69,6 @@ func clientConnectTCPAndEcho(port int) {
 	if err != nil {
 		if err == io.EOF {
 			return
-		} else {
-			// Probably panic here
 		}
 	}
 	message := Message{ECHO: &line}

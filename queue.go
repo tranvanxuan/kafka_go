@@ -30,9 +30,34 @@ func (q *Queue) push(data []byte) {
 }
 
 func (q *Queue) pop() []byte {
+	if q.head == q.tail {
+		return nil
+	}
 	data := underArr[q.head : q.head+uint32(underSize[q.head])]
 	q.head += maxMessageSize
 	q.head %= maxMessageSize * queueCapacity
+	return data
+}
+
+func (q *Queue) peek(offset uint) []byte {
+	// for case 0	1	2	3	4	5	6	7	8
+	//						   tail   head
+	// offset = 2, do bi ring buffer nen se can + them head de lay dung postion = 2
+	if q.head == q.tail {
+		return nil
+	}
+	position := q.head + uint32(offset*maxMessageSize)
+	position %= maxMessageSize * queueCapacity
+	if q.head < q.tail {
+		if !(position >= q.head && position < q.tail) {
+			return nil
+		}
+	} else {
+		if !(position >= q.head || position < q.tail) {
+			return nil
+		}
+	}
+	data := underArr[position : position+uint32(underSize[position])]
 	return data
 }
 

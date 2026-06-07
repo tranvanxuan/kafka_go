@@ -42,7 +42,7 @@ func (p *Producer) sendPortDataToBroker() error {
 	return nil
 }
 
-func (p *Producer) startProducerServer(port int16) error {
+func (p *Producer) startProducerServer() error {
 	var err error
 
 	err = p.sendPortDataToBroker()
@@ -50,7 +50,7 @@ func (p *Producer) startProducerServer(port int16) error {
 		panic(err)
 	}
 
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.port))
 	if err != nil {
 		panic(err)
 	}
@@ -66,8 +66,6 @@ func (p *Producer) startProducerServer(port int16) error {
 		if err != nil {
 			if err == io.EOF {
 				break
-			} else {
-				// Probably panic here
 			}
 		}
 
