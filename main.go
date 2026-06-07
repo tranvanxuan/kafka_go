@@ -12,6 +12,7 @@ func main() {
 	switch os.Args[1] {
 	case "server":
 		var broker = Broker{}
+		broker.init()
 		err := broker.startBrokerServer()
 		if err != nil {
 			fmt.Printf("Error starting broker: %v\n", err.Error())

@@ -5,3 +5,4 @@ BLANK_README.md
 *.exe
 # folder resource
 resource
+*.dat
