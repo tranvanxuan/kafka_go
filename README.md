@@ -23,7 +23,7 @@
 
 - [Description](#description)
 - [Architecture](#architecture)
-  - [Core Concepts](#core-concepts)
+- [Core Concepts](#core-concepts)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Configuration](#configuration)
@@ -303,8 +303,8 @@ kafka_go/
 
 ## ToDo
 
-- [v] **Multi-broker architecture**
-- [v] **Producer**
+- [x] **Multi-broker architecture**
+- [x] **Producer**
 - [x] **Topic and queue**
 - [x] **Consummer and consumer groups**
 - [x] **Partition replication**
